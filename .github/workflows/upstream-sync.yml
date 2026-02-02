@@ -1,0 +1,75 @@
+name: Upstream Sync
+
+# 定时任务：每天UTC时间0点（北京时间8点）自动执行
+# 同时支持手动触发
+on:
+  schedule:
+    # 每天 UTC 0:00 执行 (北京时间 8:00)
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      upstream_repository:
+        description: '上游仓库地址 (例如: owner/repo)'
+        required: false
+        default: ''
+      upstream_branch:
+        description: '上游分支名称'
+        required: false
+        default: 'main'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    name: 同步上游仓库
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: 配置上游仓库
+        id: config
+        run: |
+          # 如果手动触发时提供了上游仓库地址，使用提供的地址
+          if [ -n "${{ github.event.inputs.upstream_repository }}" ]; then
+            UPSTREAM_REPO="${{ github.event.inputs.upstream_repository }}"
+            UPSTREAM_BRANCH="${{ github.event.inputs.upstream_branch }}"
+            echo "使用手动指定的上游仓库: $UPSTREAM_REPO"
+          else
+            # 否则尝试从 git remote 获取 upstream
+            UPSTREAM_URL=$(git remote get-url upstream 2>/dev/null || echo "")
+            if [ -z "$UPSTREAM_URL" ]; then
+              echo "⚠️ 未配置上游仓库"
+              echo "请执行以下操作之一："
+              echo "1. 在仓库中添加 upstream remote: git remote add upstream <上游仓库URL>"
+              echo "2. 手动触发此工作流并指定上游仓库地址"
+              exit 1
+            fi
+            UPSTREAM_REPO=$(echo "$UPSTREAM_URL" | sed -E 's/.*github\.com[\/:]([^\/]+\/[^\/\.]+)(\.git)?/\1/')
+            UPSTREAM_BRANCH="main"
+            echo "使用已配置的上游仓库: $UPSTREAM_REPO"
+          fi
+          
+          echo "upstream_repo=$UPSTREAM_REPO" >> $GITHUB_OUTPUT
+          echo "upstream_branch=$UPSTREAM_BRANCH" >> $GITHUB_OUTPUT
+      
+      - name: 同步上游代码
+        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
+        with:
+          upstream_repository: ${{ steps.config.outputs.upstream_repo }}
+          upstream_branch: ${{ steps.config.outputs.upstream_branch }}
+          target_branch: main
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # 如果有冲突，则跳过此次同步
+          git_pull_args: --ff-only
+      
+      - name: 同步结果通知
+        if: always()
+        run: |
+          if [ ${{ job.status }} == 'success' ]; then
+            echo "✅ 上游同步成功完成"
+          else
+            echo "❌ 上游同步失败，请检查日志"
+          fi
