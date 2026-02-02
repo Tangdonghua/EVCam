@@ -21,6 +21,8 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     name: 同步上游仓库
+    permissions:
+      contents: write  # 需要写入权限以推送同步的代码
     
     steps:
       - name: 检出代码
