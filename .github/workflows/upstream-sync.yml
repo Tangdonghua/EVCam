@@ -68,7 +68,7 @@ jobs:
       - name: 同步结果通知
         if: always()
         run: |
-          if [ ${{ job.status }} == 'success' ]; then
+          if [ '${{ job.status }}' == 'success' ]; then
             echo "✅ 上游同步成功完成"
           else
             echo "❌ 上游同步失败，请检查日志"
